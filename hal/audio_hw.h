@@ -33,6 +33,40 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+
+ *  Changes from Qualcomm Innovation Center are provided under the following license:
+
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the
+ * disclaimer below) provided that the following conditions are met:
+
+ *  * Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+
+ *   * Redistributions in binary form must reproduce the above
+ *     copyright notice, this list of conditions and the following
+ *     disclaimer in the documentation and/or other materials provided
+ *     with the distribution.
+
+ *   * Neither the name of Qualcomm Innovation Center, Inc. nor the names of its
+ *    contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE
+ * GRANTED BY THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT
+ * HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+ * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef QCOM_AUDIO_HW_H
@@ -48,13 +82,33 @@
 #include <tinycompress/tinycompress.h>
 
 #include <audio_route/audio_route.h>
+#ifndef LINUX_ENABLED
 #include <audio_utils/ErrorLog.h>
+#else
+typedef int error_log_t;
+#define error_log_dump(error_log, fd, prefix, lines, limit_ns)                 (0)
+#define error_log_create(entries, aggregate_ns)                                (0)
+#define error_log_destroy(error_log)                                           (0)
+#endif
+#ifndef LINUX_ENABLED
 #include <audio_utils/Statistics.h>
 #include <audio_utils/clock.h>
+#endif
 #include "audio_defs.h"
 #include "voice.h"
 #include "audio_hw_extn_api.h"
 #include "device_utils.h"
+
+#if LINUX_ENABLED
+typedef struct {
+   int64_t n;
+   double min;
+   double max;
+   double last;
+   double mean;
+} simple_stats_t;
+#define NANOS_PER_SECOND    1000000000LL
+#endif
 
 #if LINUX_ENABLED
 #if defined(__LP64__)
@@ -140,6 +194,10 @@ typedef enum card_status_t {
     CARD_STATUS_ONLINE
 } card_status_t;
 
+typedef enum power_policy_status_t {
+    POWER_POLICY_STATUS_OFFLINE,
+    POWER_POLICY_STATUS_ONLINE
+} power_policy_status_t;
 /* These are the supported use cases by the hardware.
  * Each usecase is mapped to a specific PCM device.
  * Refer to pcm_device_table[].
@@ -177,6 +235,8 @@ enum {
 
     /* Capture usecases */
     USECASE_AUDIO_RECORD,
+    USECASE_AUDIO_RECORD2,
+    USECASE_AUDIO_RECORD3,
     USECASE_AUDIO_RECORD_COMPRESS,
     USECASE_AUDIO_RECORD_COMPRESS2,
     USECASE_AUDIO_RECORD_COMPRESS3,
@@ -484,8 +544,9 @@ struct stream_out {
     mix_matrix_params_t downmix_params;
     bool set_dual_mono;
     bool prev_card_status_offline;
-
+#ifndef LINUX_ENABLED
     error_log_t *error_log;
+#endif
     bool pspd_coeff_sent;
 
     int car_audio_stream; /* handle for car_audio_stream */
@@ -560,8 +621,9 @@ struct stream_in {
     int64_t frames_read; /* total frames read, not cleared when entering standby */
     int64_t frames_muted; /* total frames muted, not cleared when entering standby */
 
+#ifndef LINUX_ENABLED
     error_log_t *error_log;
-
+#endif
     simple_stats_t start_latency_ms;
 
     int car_audio_stream; /* handle for car_audio_stream*/
@@ -694,6 +756,8 @@ struct audio_device {
 
     int snd_card;
     card_status_t card_status;
+    power_policy_status_t out_power_policy;
+    power_policy_status_t in_power_policy;
     unsigned int cur_codec_backend_samplerate;
     unsigned int cur_codec_backend_bit_width;
     bool is_channel_status_set;
@@ -781,6 +845,17 @@ struct audio_patch_record {
     audio_usecase_t usecase;
     struct audio_patch patch;
 };
+
+#ifdef SOFT_VOLUME
+/* this struct is used for set/get values from AHAL*/
+struct soft_step_volume_params {
+    int period;
+    int step;
+    int curve;
+};
+#endif
+void out_set_power_policy(uint8_t enable);
+void in_set_power_policy(uint8_t enable);
 
 int select_devices(struct audio_device *adev,
                           audio_usecase_t uc_id);
